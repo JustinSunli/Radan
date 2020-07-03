@@ -33,6 +33,7 @@ using log4net.Config;
 using DevExpress.Data.Filtering;
 using DevExpress.XtraBars.Native;
 using VaultAccess;
+using System.Reflection;
 
 namespace RadanMaster
 {
@@ -58,6 +59,11 @@ namespace RadanMaster
             try
             {
                 InitializeComponent();
+
+                string version = AssemblyVersion;
+                string productName = AssemblyProduct;
+
+                this.Text = productName + " " + version;
 
                 // load group and filter settings from config file
                 groupAndFilterSettings = new GroupAndFilterSettings();
@@ -112,8 +118,6 @@ namespace RadanMaster
                 logger.Info("dbContext loaded.");
                 logger.Info("Test2");
 
-                this.Text = dbContext.Database.Connection.Database.ToString();
-
                 orderItemsBindingSource.DataSource = dbContext.OrderItems.Local.ToBindingList();
                 nestsBindingSource.DataSource = null;
 
@@ -139,7 +143,8 @@ namespace RadanMaster
             catch (Exception ex)
             {
                 progressPanel1.Hide();
-                MessageBox.Show(ex.Message);
+                MessageBox.Show(ex.Message + ex.InnerException.Message);
+
             }
 
         }
@@ -774,14 +779,6 @@ namespace RadanMaster
                     }
                 }
 
-                // shouldn't be necessary to save this specifically, but job details are not serializing properly, so this is a work around...
-                long maxNestNumber = 0;
-                foreach (RadanNest radanNest in rPrj.Nests)
-                {
-                    if (long.Parse(radanNest.ID) > maxNestNumber)
-                        maxNestNumber = long.Parse(radanNest.ID);
-                }
-
                 FileInfo oldProjFile = new FileInfo(radanProjectName);
                 DirectoryInfo prjRootDir = oldProjFile.Directory.Parent;
 
@@ -809,9 +806,10 @@ namespace RadanMaster
 
                 rPrj.Nests = new List<RadanNest>();
                 rPrj.Parts.Part = new List<RadanPart>();
-                rPrj.RadanSchedule.JobDetails.nestFolder = uniqueNewPrjFolder.FullName + "\\" + "nests";
-                rPrj.RadanSchedule.JobDetails.remnantSaveFolder = uniqueNewPrjFolder.FullName + "\\" + "remnants";
-                rPrj.FirstNestNumber = maxNestNumber + 1;
+                rPrj.RadanSchedule[0].JobDetails[0].NestFolder = uniqueNewPrjFolder.FullName + "\\" + "nests";
+                rPrj.RadanSchedule[0].JobDetails[0].RemnantSaveFolder = uniqueNewPrjFolder.FullName + "\\" + "remnants";
+                rPrj.FirstNestNumber = rPrj.RadanSchedule[0].JobDetails[0].NextNestNum;
+                rPrj.RadanSchedule[0].JobDetails[0].NextNestNum = rPrj.FirstNestNumber;
 
                 // calculate the new number of sheets still available
                 foreach (RadanSheet sheet in rPrj.Sheets.Sheet)
@@ -2138,6 +2136,87 @@ namespace RadanMaster
                 }
             }
         }
+
+        #region Assembly Attribute Accessors
+
+        public string AssemblyTitle
+        {
+            get
+            {
+                object[] attributes = Assembly.GetExecutingAssembly().GetCustomAttributes(typeof(AssemblyTitleAttribute), false);
+                if (attributes.Length > 0)
+                {
+                    AssemblyTitleAttribute titleAttribute = (AssemblyTitleAttribute)attributes[0];
+                    if (titleAttribute.Title != "")
+                    {
+                        return titleAttribute.Title;
+                    }
+                }
+                return System.IO.Path.GetFileNameWithoutExtension(Assembly.GetExecutingAssembly().CodeBase);
+            }
+        }
+
+        public string AssemblyVersion
+        {
+            get
+            {
+                return Assembly.GetExecutingAssembly().GetName().Version.ToString();
+            }
+        }
+
+        public string AssemblyDescription
+        {
+            get
+            {
+                object[] attributes = Assembly.GetExecutingAssembly().GetCustomAttributes(typeof(AssemblyDescriptionAttribute), false);
+                if (attributes.Length == 0)
+                {
+                    return "";
+                }
+                return ((AssemblyDescriptionAttribute)attributes[0]).Description;
+            }
+        }
+
+        public string AssemblyProduct
+        {
+            get
+            {
+                object[] attributes = Assembly.GetExecutingAssembly().GetCustomAttributes(typeof(AssemblyProductAttribute), false);
+                if (attributes.Length == 0)
+                {
+                    return "";
+                }
+                return ((AssemblyProductAttribute)attributes[0]).Product;
+            }
+        }
+
+        public string AssemblyCopyright
+        {
+            get
+            {
+                object[] attributes = Assembly.GetExecutingAssembly().GetCustomAttributes(typeof(AssemblyCopyrightAttribute), false);
+                if (attributes.Length == 0)
+                {
+                    return "";
+                }
+                return ((AssemblyCopyrightAttribute)attributes[0]).Copyright;
+            }
+        }
+
+        public string AssemblyCompany
+        {
+            get
+            {
+                object[] attributes = Assembly.GetExecutingAssembly().GetCustomAttributes(typeof(AssemblyCompanyAttribute), false);
+                if (attributes.Length == 0)
+                {
+                    return "";
+                }
+                return ((AssemblyCompanyAttribute)attributes[0]).Company;
+            }
+        }
+        #endregion
+
     }
 }
 
