@@ -34,6 +34,9 @@ using DevExpress.Data.Filtering;
 using DevExpress.XtraBars.Native;
 using VaultAccess;
 using System.Reflection;
+using DevExpress.Data.Mask;
+using System.Data.Entity.Migrations;
+using DevExpress.Utils.Extensions;
 
 namespace RadanMaster
 {
@@ -49,6 +52,8 @@ namespace RadanMaster
         BindingList<DisplayItem> DisplayItems { get; set; }
         GroupAndFilterSettings groupAndFilterSettings { get; set; }
 
+        List<RadanID> radanIdList { get; set; }
+
         //private static readonly log4net.ILog logger =
         //log4net.LogManager.GetLogger(typeof(Program));
 
@@ -58,6 +63,8 @@ namespace RadanMaster
         {
             try
             {
+                SplashScreenManager.ShowForm(this, typeof(SplashScreen1), true, true, false);
+
                 InitializeComponent();
 
                 string version = AssemblyVersion;
@@ -139,41 +146,59 @@ namespace RadanMaster
                 // load collapsed/expanded state of gridview
                 helper = new RefreshHelper(gridViewItems, "ID");
                 helper.LoadViewInfo();
+
+                SplashScreenManager.HideImage();
             }
             catch (Exception ex)
             {
                 progressPanel1.Hide();
                 MessageBox.Show(ex.Message + ex.InnerException.Message);
-
+                SplashScreenManager.HideImage();
             }
 
         }
 
-        public int CalculateRadanID(OrderItem orderItem)
+        public int CalculateRadanID(OrderItem orderItem, List<RadanID> radanIdList)
         {
             // loop through RadanID referene table, till we find an id in the range of 0 to 500 that is available
             for (int i = 1; i <= 500; i++)
             {
-                RadanID radanIDItem = (dbContext.RadanIDs.Where(r => r.RadanIDNumber == i).FirstOrDefault());
+                RadanID radanIDItem = (radanIdList.Where(r => r.RadanIDNumber == i).FirstOrDefault());
                 if (radanIDItem == null)
                 {
                     RadanID newRadanID = new RadanID();
                     newRadanID.OrderItem = orderItem;
                     newRadanID.OrderItemID = orderItem.ID;
                     newRadanID.RadanIDNumber = i;
-                    dbContext.RadanIDs.Add(newRadanID);
-                    dbContext.SaveChanges();
+                    radanIdList.Add(newRadanID);
                     orderItem.RadanID = newRadanID;
                     orderItem.RadanIDNumber = i;
-                    dbContext.SaveChanges();
                     return i;
                 }
             }
 
-
             return -1;
+            
         }
 
+        private double NormalizeThickness(double thickness)
+        {
+            double normalizedThickness = 0;
+            double tolerance = 0.007;
+
+            if (thickness > 0.312 - tolerance && thickness < 0.312 + tolerance)
+                normalizedThickness = 0.312;
+            if (thickness > 0.188 - tolerance && thickness < 0.188 + tolerance)
+                normalizedThickness = 0.188;
+            if (thickness > 0.125 - 0.010 && thickness < 0.125 + 0.015)
+                normalizedThickness = 0.125;
+            if (thickness > 0.075 - tolerance && thickness < 0.075 + tolerance)
+                normalizedThickness = 0.075;
+            if (thickness > 0.062 - tolerance && thickness < 0.062 + tolerance)
+                normalizedThickness = 0.062;
+
+            return normalizedThickness;
+        }
         private void importXmlFile(string fileName)
         {
             string plantID = AppSettings.AppSettings.Get("PlantID").ToString();
@@ -219,7 +244,10 @@ namespace RadanMaster
                                 newPart.FileName = lineItem.Number;
                                 newPart.Description = lineItem.ItemDescription;
                                 string modifiedThickness = lineItem.MaterialThickness.Substring(0, lineItem.MaterialThickness.LastIndexOf(" "));
-                                newPart.Thickness = double.Parse(modifiedThickness);
+                                newPart.Thickness = NormalizeThickness(double.Parse(modifiedThickness));
+                                // the following should work, but has not been tested yet.
+                                //if (lineItem.MaterialThickness.Contains("mm"))
+                                //    newPart.Thickness = newPart.Thickness / 25.4;
                                 newPart.Material = lineItem.Material;
                                 newPart.Thumbnail = thumbnailByteArray;
                                 newPart.HasBends = hasBends;
@@ -232,7 +260,10 @@ namespace RadanMaster
                                 // update properties if needed
                                 newPart.Description = lineItem.ItemDescription;
                                 string modifiedThickness = lineItem.MaterialThickness.Substring(0, lineItem.MaterialThickness.LastIndexOf(" "));
-                                newPart.Thickness = double.Parse(modifiedThickness);
+                                newPart.Thickness = NormalizeThickness(double.Parse(modifiedThickness));
+                                // the following should work, but has not been tested yet
+                                //if (lineItem.MaterialThickness.Contains("mm"))
+                                //    newPart.Thickness = newPart.Thickness / 25.4;
                                 newPart.Material = lineItem.Material;
                                 newPart.Thumbnail = thumbnailByteArray;
                                 newPart.HasBends = hasBends;
@@ -336,16 +367,13 @@ namespace RadanMaster
                             {
                                 matchFound = true;
                                 rPart.Number = oItem.QtyRequired - oItem.QtyNested;  // item still exists in project, just need to update 
-                                //rPrj.SaveData(radanProjectName);
 
                                 MessageBox.Show(Path.GetFileName(symName) + " already exists in this radan projecs, only qty required will be updated.");
                                 oItem.IsInProject = true;
-                                dbContext.SaveChanges();
                                 break;
                             }
                         }
                     }
-
                     if (!matchFound)
                     {
                         //create new part in project
@@ -404,20 +432,19 @@ namespace RadanMaster
                         rPart.ThickUnits = "in";
                         rPart.Thickness = oItem.Part.Thickness;
                         rPart.Material = oItem.Part.Material;
-                        int radanID = CalculateRadanID(oItem);
+                         
+                        int radanID = CalculateRadanID(oItem,radanIdList);
                         if (radanID != -1) // check to make sure we dont' have more than the max 500 parts in the radan project
                             rPart.Bin = radanID.ToString();
                         else
                             return false;   // 
                         rPrj.AddPart(rPart);
-                        //rPrj.SaveData(radanProjectName);
 
                         oItem.IsInProject = true;
-                        dbContext.SaveChanges();
+                        //dbContext.SaveChanges();
                     }
 
                 }
-                rPrj.SaveData(radanProjectName);
                 return true;
             }
             catch (Exception ex)
@@ -518,10 +545,9 @@ namespace RadanMaster
                             item.IsInProject = false;
                         }
                     }
-
-                    dbContext.SaveChanges();
                     gridViewItems.RefreshData();
                 }
+                dbContext.SaveChanges();
                 return true;
             }
             catch (Exception ex)
@@ -558,14 +584,12 @@ namespace RadanMaster
                             item.RadanIDNumber = 0;
                            
                             RemoveSymFileFromProject(rPart.Symbol);
-                            dbContext.SaveChanges();        // save db before next iteration so RemoveSymFiles calculates properly
                         }
 
                         else
                         {
                             rPart.Number = rPart.Made;
                         }
-                        //rPrj.SaveData(radanProjectName);
                     }
                 }
 
@@ -614,7 +638,6 @@ namespace RadanMaster
                                 orderItem.RadanIDNumber = 0;
                                
                                 RemoveSymFileFromProject(rPart.Symbol);
-                                dbContext.SaveChanges();    // save db before next iteration so RemoveSymFiles calculates properly
                             }
 
                         }
@@ -1027,6 +1050,8 @@ namespace RadanMaster
         {
             if (radInterface.IsProjectReady())
             {
+                radanIdList = dbContext.RadanIDs.ToList();
+
                 string errMsg = "";
                 if (radInterface.getOpenProjectName(ref errMsg) == radanProjectName)
                 {
@@ -1036,6 +1061,7 @@ namespace RadanMaster
                     {
                         rPrj = new RadanProject();
                         rPrj = rPrj.LoadData(radanProjectName);
+                        List<OrderItem> orderItemList = dbContext.OrderItems.ToList();
 
                         for (int i = 0; i < gridViewItems.DataRowCount; i++)
                         {
@@ -1053,7 +1079,7 @@ namespace RadanMaster
                                 if (gridViewItems.GetRowCellValue(i, "Order.ScheduleName") != null)
                                     schedName = gridViewItems.GetRowCellValue(i, "Order.ScheduleName").ToString();
 
-                                OrderItem orderItem = dbContext.OrderItems.Where(oi => oi.Part.FileName == partName)
+                                OrderItem orderItem = orderItemList.Where(oi => oi.Part.FileName == partName)
                                                                           .Where(oi => oi.Order.OrderNumber == orderNumber)
                                                                           .Where(oi => oi.Order.BatchName == batchName)
                                                                           .Where(oi => oi.Order.ScheduleName == schedName).FirstOrDefault();
@@ -1066,6 +1092,10 @@ namespace RadanMaster
                             }
                         }
 
+                        dbContext.RadanIDs.BulkUpdate(radanIdList);
+
+                        dbContext.SaveChanges();
+                        rPrj.SaveData(radanProjectName);
                     }
 
                     // need to open current project here...
@@ -1076,6 +1106,8 @@ namespace RadanMaster
                     string path = barEditRadanProject.EditValue.ToString();
                     rPrj.SaveData(path);
 
+                    radInterface.SaveNest(ref errMessage);  // save open nest again so quantities start updating right away.
+                    
                     gridViewItems.RefreshData();
 
                     SplashScreenManager.HideImage();
@@ -1173,7 +1205,10 @@ namespace RadanMaster
                     string name = System.IO.Path.GetFileNameWithoutExtension(addItemFileName);
                     string description = radanInterface.GetDescriptionFromSym(addItemFileName);
                     string thicknessStr = radanInterface.GetThicknessFromSym(addItemFileName);
+                    string thicknessUnit = radanInterface.GetThicknessUnitsFromSym(addItemFileName);
                     double thickness = double.Parse(thicknessStr);
+                    if (thicknessUnit == "mm") thickness = thickness / 25.4;
+                    thickness = NormalizeThickness(thickness);
                     string material = radanInterface.GetMaterialTypeFromSym(addItemFileName);
                     char[] thumbnailCharArray = radanInterface.GetThumbnailDataFromSym(addItemFileName);
                     byte[] thumbnailByteArray = Convert.FromBase64CharArray(thumbnailCharArray, 0, thumbnailCharArray.Length);
